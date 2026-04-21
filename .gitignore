@@ -1,0 +1,16 @@
+# Local config overrides — may contain real email addresses
+*.local.json
+*_local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
