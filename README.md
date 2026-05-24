@@ -1,6 +1,60 @@
-# outlook-bridge
+# claude-outlook-bridge
 
-A Python script that gives Claude Code direct access to your Outlook Desktop App via Windows COM automation — no OAuth, no API keys, no cloud intermediary.
+**Let Claude Code (and other LLM agents) read and send Outlook email on Windows — no OAuth, no Microsoft Graph, no cloud intermediary.**
+
+A single-file Python bridge that connects Claude Code to your Outlook Desktop App via Windows COM automation. If you're signed into Outlook, Claude has access. Read inboxes, search threads, draft replies, forward with notes, move messages, query calendars — all from inside a Claude Code conversation.
+
+Built for: Claude Code on Windows, Cursor, Aider, or any agent that can shell out to `python`. A practical alternative to building an MCP server when Outlook is already open in front of you.
+
+---
+
+## At a glance
+
+| | |
+|---|---|
+| **Platform** | Windows 10/11 only (uses COM / `pywin32`) |
+| **Python** | 3.9+ |
+| **Auth model** | None — inherits your signed-in Outlook session |
+| **Outlook flavour** | Classic Outlook Desktop App (the Windows thick client). Not New Outlook, OWA, or Mac. |
+| **Commands** | `folders`, `list`, `search`, `read`, `send`, `reply`, `forward`, `move`, `delete`, `cal-list` |
+| **Output** | JSON (add `--pretty` for human formatting) |
+| **Dependencies** | `pywin32` |
+| **License** | MIT |
+| **Agent config** | See [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt) |
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/ChiefStarKid/claude-outlook-bridge.git
+cd claude-outlook-bridge
+pip install -r requirements.txt
+python outlook_bridge.py list --pretty   # smoke test
+```
+
+Then drop this into `.claude/settings.json` in your project to let Claude Code invoke it:
+
+```json
+{ "permissions": { "allow": ["Bash(python *outlook_bridge.py*:*)"] } }
+```
+
+Coding agents should read [AGENTS.md](AGENTS.md) for the full auto-wire snippet. Humans, keep reading.
+
+---
+
+## When to use this vs. alternatives
+
+| Approach | Auth setup | Platform | Best for |
+|---|---|---|---|
+| **claude-outlook-bridge (this repo)** | None — uses signed-in Outlook | Windows + classic Outlook | Local AI assistant on your own machine. Zero config beyond a pip install. |
+| Microsoft Graph API | Azure app registration + OAuth | Any | Server-side automation, cross-platform, headless. |
+| Outlook Add-in (Office JS) | Side-load or Store deploy | Anywhere Outlook runs | Extending the Outlook UI itself, not driving it from outside. |
+| Generic email MCP server | Varies (often IMAP/OAuth) | Any | Multi-mailbox / multi-provider setups, or non-Outlook accounts. |
+
+If Outlook is already open on your Windows box and you just want Claude to use it, this bridge is the shortest path. For anything cross-platform or headless, use Graph.
+
+---
 
 ## Why this exists
 
@@ -24,8 +78,8 @@ If you use Outlook on Windows and work with Claude Code, this lets Claude become
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/outlook-bridge.git
-cd outlook-bridge
+git clone https://github.com/ChiefStarKid/claude-outlook-bridge.git
+cd claude-outlook-bridge
 pip install -r requirements.txt
 ```
 
@@ -188,6 +242,34 @@ python outlook_bridge.py list --pretty
 
 ---
 
+## FAQ
+
+### Does this work with the new Outlook for Windows?
+No. The new Outlook is a web wrapper without the COM surface. You need the classic Outlook Desktop App (the one bundled with Microsoft 365 / Office 2019+).
+
+### Does this work on macOS or Linux?
+No. COM is Windows-only. On macOS or for headless setups, use the Microsoft Graph API instead.
+
+### Why not just use an MCP server?
+MCP is great when you need a long-running server process and cross-client compatibility. This bridge is deliberately the opposite: one Python file, no daemon, no protocol overhead. Claude shells out, Outlook responds, JSON comes back. For a single-user Windows workflow it's much less to set up and less to break.
+
+### Why not Microsoft Graph?
+Graph requires an Azure app registration, OAuth consent flow, and token refresh. This bridge requires none of that — it rides your existing Outlook session. Trade-off: it only works while you're at your Windows machine with Outlook open.
+
+### Is auto-send safe?
+`send`, `reply`, and `forward` send immediately by default. **Always have Claude use `--draft`** unless you explicitly want an outgoing message. The recommended CLAUDE.md snippet in [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) bakes this in.
+
+### Does Outlook need to be open?
+Yes. The script attaches to the running Outlook process. If Outlook isn't open, the COM dispatch will fail.
+
+### Can it read shared mailboxes?
+Any mailbox or folder visible in your Outlook profile is reachable via the `--folder` argument using a path like `Shared Mailbox/Inbox`. Shared calendars need a one-line entry in `outlook_bridge_config.json`.
+
+### Does it use AI / send my email to Anthropic?
+No. The bridge itself is pure Python ↔ COM. It only returns email content to whatever process invokes it (typically Claude Code, which then handles it per your normal CC privacy settings).
+
+---
+
 ## Design notes
 
 **COM automation vs Outlook Add-ins**
@@ -220,3 +302,12 @@ Claude processes structured data better than prose. Every command returns a JSON
 - Requires the Outlook Desktop App (the Windows thick client) — not compatible with the new Outlook web wrapper, OWA, or Mac Outlook
 - Outlook must be open and signed in when the script runs
 - Tested against classic Outlook (Microsoft 365 subscription); behaviour may vary on older perpetual-license versions
+
+---
+
+## Related docs
+
+- [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) — recommended CLAUDE.md snippet, permission scoping, draft-by-default rules
+- [EXAMPLES.md](EXAMPLES.md) — worked Claude prompts for common email workflows
+- [AGENTS.md](AGENTS.md) — machine-readable manifest for coding agents (Claude Code, Cursor, Aider)
+- [llms.txt](llms.txt) — [llmstxt.org](https://llmstxt.org) index for LLM ingestion

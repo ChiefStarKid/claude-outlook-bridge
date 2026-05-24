@@ -1,0 +1,24 @@
+# claude-outlook-bridge
+
+> Single-file Python COM bridge that gives Claude Code and other LLM agents read/send/reply/forward/calendar access to the Outlook Desktop App on Windows. No OAuth, no Microsoft Graph, no cloud intermediary — it rides the user's already-signed-in Outlook session.
+
+Platform: Windows only (uses `pywin32` COM). Requires classic Outlook Desktop App running and signed in. Not compatible with New Outlook, OWA, or Mac Outlook.
+
+Invocation pattern: agents shell out to `python outlook_bridge.py <command> [flags]` and parse JSON from stdout. All side-effecting commands (`send`, `reply`, `forward`) send immediately unless `--draft` is passed — agents should default to `--draft`.
+
+## Docs
+
+- [README.md](README.md): full installation, command reference, comparison with Microsoft Graph / MCP / Outlook Add-ins, design rationale, FAQ
+- [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md): recommended CLAUDE.md snippet, permission scoping, draft-by-default policy
+- [EXAMPLES.md](EXAMPLES.md): worked Claude prompts for common email workflows
+- [AGENTS.md](AGENTS.md): machine-readable command manifest, settings.json snippet, side-effect classification
+
+## Source
+
+- [outlook_bridge.py](outlook_bridge.py): single-file implementation
+- [outlook_bridge_config.json](outlook_bridge_config.json): optional shared-calendar config
+- [requirements.txt](requirements.txt): `pywin32` only
+
+## Optional
+
+- [LICENSE](LICENSE): MIT
