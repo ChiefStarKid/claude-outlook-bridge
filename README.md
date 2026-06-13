@@ -305,9 +305,49 @@ Claude processes structured data better than prose. Every command returns a JSON
 
 ---
 
+## Sample output
+
+`python outlook_bridge.py list --count 2 --pretty`
+
+```json
+[
+  {
+    "EntryID": "00000000ABC123...",
+    "Subject": "Q2 renewal — action required",
+    "SenderName": "Alice Tan",
+    "SenderEmail": "alice@client.com",
+    "ReceivedTime": "2026-06-12T09:14:00",
+    "Unread": true,
+    "HasAttachments": false,
+    "BodyPreview": "Hi, following up on the renewal terms we discussed last week..."
+  },
+  {
+    "EntryID": "00000000DEF456...",
+    "Subject": "Re: staging deployment",
+    "SenderName": "Bob Lee",
+    "SenderEmail": "bob@internal.com",
+    "ReceivedTime": "2026-06-11T17:42:00",
+    "Unread": false,
+    "HasAttachments": true,
+    "BodyPreview": "Attached the updated config. Let me know if the env vars look right..."
+  }
+]
+```
+
+Pass any `EntryID` to `read` for the full message body, headers, and attachment list.
+
+---
+
 ## Related docs
 
 - [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) — recommended CLAUDE.md snippet, permission scoping, draft-by-default rules
 - [EXAMPLES.md](EXAMPLES.md) — worked Claude prompts for common email workflows
 - [AGENTS.md](AGENTS.md) — machine-readable manifest for coding agents (Claude Code, Cursor, Aider)
 - [llms.txt](llms.txt) — [llmstxt.org](https://llmstxt.org) index for LLM ingestion
+
+---
+
+## Questions and feedback
+
+- **General enquiries:** [joseph@kainosis.com](mailto:joseph@kainosis.com)
+- **Bugs and feature requests:** [open an issue](../../issues)
