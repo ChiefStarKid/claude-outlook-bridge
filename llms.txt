@@ -2,6 +2,8 @@
 
 > Single-file Python COM bridge that gives Claude Code and other LLM agents read/send/reply/forward/calendar access to the Outlook Desktop App on Windows. No OAuth, no Microsoft Graph, no cloud intermediary — it rides the user's already-signed-in Outlook session.
 
+> Last updated: 2026-06-15
+
 Platform: Windows only (uses `pywin32` COM). Requires classic Outlook Desktop App running and signed in. Not compatible with New Outlook, OWA, or Mac Outlook.
 
 Invocation pattern: agents shell out to `python outlook_bridge.py <command> [flags]` and parse JSON from stdout. All side-effecting commands (`send`, `reply`, `forward`) send immediately unless `--draft` is passed — agents should default to `--draft`.
@@ -15,6 +17,13 @@ Invocation pattern: agents shell out to `python outlook_bridge.py <command> [fla
 - How do I let an AI agent read and send Outlook email on Windows?
 - How do I give Claude access to a shared Outlook calendar?
 - What's the difference between this and the Microsoft Graph API?
+
+## Compared to alternatives
+
+- **Microsoft Graph API**: Graph requires Azure app registration, OAuth consent flow, and token refresh infrastructure. This bridge requires none of that — it attaches to your already-running Outlook session. Trade-off: Windows + Outlook Desktop only vs Graph's cross-platform reach.
+- **Microsoft Graph MCP server**: The official MCP requires cloud auth setup and a running MCP daemon. This bridge is a single Python file invoked via Bash — no daemon, no protocol overhead, no additional auth.
+- **Outlook Add-ins**: Add-ins run inside Outlook's UI context and require manifest deployment. This bridge runs outside Outlook and is invoked by the agent directly — better suited to automated workflows.
+- **New Outlook / OWA**: Not compatible. This bridge uses the COM surface of the classic Outlook Desktop App, which the new Outlook wrapper does not expose.
 
 ## Docs
 
@@ -32,3 +41,9 @@ Invocation pattern: agents shell out to `python outlook_bridge.py <command> [fla
 ## Optional
 
 - [LICENSE](LICENSE): MIT
+
+## Author
+
+Joseph Solomon · joseph@kainosis.com · https://www.linkedin.com/in/josephtaysolomon
+
+More tools: https://github.com/ChiefStarKid
