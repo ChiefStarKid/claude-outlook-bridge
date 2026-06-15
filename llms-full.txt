@@ -11,159 +11,678 @@ Canonical source: https://github.com/ChiefStarKid/claude-outlook-bridge
 
 > Single-file Python COM bridge that gives Claude Code and other LLM agents read/send/reply/forward/calendar access to the Outlook Desktop App on Windows. No OAuth, no Microsoft Graph, no cloud intermediary — it rides the user's already-signed-in Outlook session.
 
+> Last updated: 2026-06-15
+
 Platform: Windows only (uses `pywin32` COM). Requires classic Outlook Desktop App running and signed in. Not compatible with New Outlook, OWA, or Mac Outlook.
 
 Invocation pattern: agents shell out to `python outlook_bridge.py <command> [flags]` and parse JSON from stdout. All side-effecting commands (`send`, `reply`, `forward`) send immediately unless `--draft` is passed — agents should default to `--draft`.
 
-### Key questions this bridge answers
+## Key questions this bridge answers
 
+- Can Claude read my emails?
+- How do I connect an AI agent to Outlook without setting up an API?
+- Is there a way to automate Outlook with Python that doesn't need admin setup?
 - How do I give Claude Code access to my Outlook email without OAuth or API setup?
 - How do I let an AI agent read and send Outlook email on Windows?
-- What's the simplest way to automate Outlook with Python?
 - How do I give Claude access to a shared Outlook calendar?
 - What's the difference between this and the Microsoft Graph API?
 
-### Commands
+## Compared to alternatives
 
-folders · list · search · read · send · reply · forward · move · delete · cal-list
+- **Microsoft Graph API**: Graph requires Azure app registration, OAuth consent flow, and token refresh infrastructure. This bridge requires none of that — it attaches to your already-running Outlook session. Trade-off: Windows + Outlook Desktop only vs Graph's cross-platform reach.
+- **Microsoft Graph MCP server**: The official MCP requires cloud auth setup and a running MCP daemon. This bridge is a single Python file invoked via Bash — no daemon, no protocol overhead, no additional auth.
+- **Outlook Add-ins**: Add-ins run inside Outlook's UI context and require manifest deployment. This bridge runs outside Outlook and is invoked by the agent directly — better suited to automated workflows.
+- **New Outlook / OWA**: Not compatible. This bridge uses the COM surface of the classic Outlook Desktop App, which the new Outlook wrapper does not expose.
 
-All output is JSON. Add `--pretty` for human-readable formatting.
+## Docs
 
-### Side-effect classification
+- [README.md](README.md): full installation, command reference, comparison with Microsoft Graph / MCP / Outlook Add-ins, design rationale, FAQ
+- [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md): recommended CLAUDE.md snippet, permission scoping, draft-by-default policy
+- [EXAMPLES.md](EXAMPLES.md): worked Claude prompts for common email workflows
+- [AGENTS.md](AGENTS.md): machine-readable command manifest, settings.json snippet, side-effect classification
 
-| Command | Side effects |
-|---|---|
-| folders, list, search, read, cal-list | None — read-only |
-| send | Sends immediately — no draft mode |
-| reply, forward | Sends immediately unless `--draft` passed |
-| move | Mutates mailbox state |
-| delete | Moves to Deleted Items (recoverable) |
+## Source
+
+- [outlook_bridge.py](outlook_bridge.py): single-file implementation
+- [outlook_bridge_config.json](outlook_bridge_config.json): optional shared-calendar config
+- [requirements.txt](requirements.txt): `pywin32` only
+
+## Optional
+
+- [LICENSE](LICENSE): MIT
+
+## Author
+
+Joseph Solomon · joseph@kainosis.com · https://www.linkedin.com/in/josephtaysolomon
+
+More tools: https://github.com/ChiefStarKid
 
 ---
 
 ## AGENTS.md
 
-### What this is
+# AGENTS.md
+
+Instructions for coding agents (Claude Code, Cursor, Aider, etc.) wiring this bridge into a user's project.
+
+## What this is
 
 `claude-outlook-bridge` is a single Python file (`outlook_bridge.py`) that an agent invokes via Bash to read and send email through the user's already-open Outlook Desktop App on Windows. No auth setup. All output is JSON on stdout; errors exit non-zero with `{"error": "..."}`.
 
-### Auto-wire checklist
+## Auto-wire checklist
 
-When a user asks you to set up Outlook access:
+When a user asks you to set up Outlook access in their project, do all of the following:
 
-1. Clone to `~/.claude/outlook-bridge/`:
+1. **Clone or download** to a stable path. Recommend `~/.claude/outlook-bridge/` so the script can be shared across projects:
    ```bash
    git clone https://github.com/ChiefStarKid/claude-outlook-bridge.git ~/.claude/outlook-bridge
    pip install -r ~/.claude/outlook-bridge/requirements.txt
    ```
 
-2. Smoke test:
+2. **Smoke test** before wiring it in:
    ```bash
    python ~/.claude/outlook-bridge/outlook_bridge.py folders --pretty
    ```
+   If this returns folder JSON, Outlook is reachable. If it errors, Outlook isn't open or `pywin32` isn't installed — fix before continuing.
 
-3. Add permission to `.claude/settings.json`:
+3. **Add the permission** to the project's `.claude/settings.json` (create the file if missing):
    ```json
-   { "permissions": { "allow": ["Bash(python *outlook_bridge.py*:*)"] } }
+   {
+     "permissions": {
+       "allow": ["Bash(python *outlook_bridge.py*:*)"]
+     }
+   }
    ```
 
-4. Add CLAUDE.md snippet (see CLAUDE_INTEGRATION.md for full text).
+4. **Add a CLAUDE.md snippet** so the assistant knows the bridge exists and the safety rules:
+   ```markdown
+   ## Outlook email access
 
-### Command manifest
+   Outlook is reachable via:
+   `python ~/.claude/outlook-bridge/outlook_bridge.py <command> [flags]`
 
-| Command | Required args | Side effects | Idempotent |
-|---|---|---|---|
-| folders | — | none | yes |
-| list | — | none | yes |
-| search | query | none | yes |
-| read | entry_id | none | yes |
-| send | --to --subject --body | sends immediately | no |
-| reply | entry_id --body | sends immediately unless --draft | no |
-| forward | entry_id --to | sends immediately unless --draft | no |
-| move | entry_id --folder | mutates mailbox | yes (same target) |
-| delete | entry_id | moves to Deleted Items | yes |
-| cal-list | --from --to | none | yes |
+   Commands: `folders`, `list`, `search`, `read`, `send`, `reply`, `forward`, `move`, `delete`, `cal-list`.
+   All output is JSON. Use `--pretty` for human display.
 
-### Hard rules for agents
+   **Safety:** `send`, `reply`, `forward` send immediately by default.
+   ALWAYS pass `--draft` on `reply` and `forward` unless the user explicitly
+   asks to send. For new outgoing mail, draft in Outlook and ask the user
+   to review before using `send`.
+   ```
 
-1. Default to `--draft` on `reply` and `forward`.
-2. Confirm before `send` — state recipients, subject, one-line body summary, wait for approval.
-3. Confirm before `delete` of non-transient email.
-4. Use `search` rather than looping `list` to scan the inbox.
-5. Pass EntryIDs verbatim — opaque tokens, do not truncate.
-6. If a command errors with COM dispatch failure, surface it to the user rather than retrying.
+## Command manifest
+
+| Command | Required args | Side effects | Idempotent | Notes |
+|---|---|---|---|---|
+| `folders` | — | none | yes | Returns full folder tree as JSON. |
+| `list` | — | none | yes | `--folder <name|path>` `--count <n>`. Returns array of `{EntryID, Subject, From, ReceivedTime, ...}`. |
+| `search` | `<query>` | none | yes | Full-text across subject/body/sender/recipient. Same flags as `list`. |
+| `read` | `<entry_id>` | none | yes | Returns full body + attachment metadata. `EntryID` comes from `list`/`search`. |
+| `send` | `--to --subject --body` | **sends mail immediately** | no | No `--draft` flag — there is no draft mode for new mail in the current bridge. Confirm with user before invoking. |
+| `reply` | `<entry_id> --body` | **sends mail immediately** unless `--draft` | no | Always pass `--draft` by default. `--all` for reply-all. |
+| `forward` | `<entry_id> --to` | **sends mail immediately** unless `--draft` | no | Always pass `--draft` by default. `--body` adds an optional note. |
+| `move` | `<entry_id> --folder` | mutates mailbox state | yes (same target) | Folder path supports nesting (`Projects/Client`). |
+| `delete` | `<entry_id>` | moves to Deleted Items | yes | Recoverable from Deleted Items. |
+| `cal-list` | `--from --to` | none | yes | Dates `YYYY-MM-DD`. `--cal <name>` for shared calendars (requires config). |
+
+## Output contract
+
+- Success: JSON object or array on stdout, exit 0.
+- Failure: `{"error": "<message>"}` on stdout, exit 1.
+- `--pretty` reformats stdout but does not change the schema. Do not pass `--pretty` when piping to another command — parse the compact JSON directly.
+
+## Hard rules for agents
+
+1. **Default to `--draft`** on `reply` and `forward`. Only omit it when the user has explicitly said "send" in the current turn.
+2. **Confirm before `send`** (which has no draft mode). State the recipients, subject, and a one-line body summary, and wait for the user to approve.
+3. **Confirm before `delete`** of anything that wasn't obviously transient (e.g. a notification the user told you to clean up).
+4. **Don't loop `list` to scrape the inbox.** Use `search` with a query. Repeated `list` calls bloat context.
+5. **Pass EntryIDs through verbatim.** They're opaque tokens — don't truncate, normalise, or quote-escape them.
+6. **Don't assume Outlook is open.** If a command errors with a COM dispatch failure, surface the error to the user instead of retrying.
+
+## Repo
+
+Canonical source: <https://github.com/ChiefStarKid/claude-outlook-bridge>
 
 ---
 
 ## CLAUDE_INTEGRATION.md
 
-### How it works
+# Integrating outlook-bridge with Claude Code
+
+This guide explains how to wire `outlook_bridge.py` into Claude Code so Claude can read and act on your email during a conversation.
+
+---
+
+## How it works
+
+Claude Code can run shell commands via the Bash tool. The bridge is a Python script that Claude calls like any CLI tool, receives structured JSON back, and reasons over the result. No MCP server, no webhook, no persistent process — just a script Claude can invoke on demand.
 
 ```
-Claude Code → Bash("python ~/.claude/outlook_bridge.py list") → Outlook Desktop App
-                                                               ← JSON response
+Claude Code  →  Bash("python ~/.claude/outlook_bridge.py list")  →  Outlook Desktop App
+                                                                  ←  JSON response
 ```
 
-### Setup
+---
 
-1. Copy `outlook_bridge.py` to `~/.claude/`
-2. Add permission to `.claude/settings.json`: `"allow": ["Bash(python *outlook_bridge.py*:*)"]`
-3. Add CLAUDE.md snippet:
+## Setup
+
+### 1. Place the script
+
+Copy `outlook_bridge.py` to `~/.claude/`:
+
+```
+C:\Users\YourName\.claude\outlook_bridge.py
+```
+
+If you want shared calendar support, copy `outlook_bridge_config.json` to the same location and edit it with your shared calendar email addresses.
+
+### 2. Grant Bash permission
+
+Add a scoped permission to `.claude/settings.json` (project-level) or `~\AppData\Roaming\Claude\claude_desktop_config.json` (global):
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(python *outlook_bridge.py*:*)"]
+  }
+}
+```
+
+This allows Claude to run the bridge and nothing else automatically.
+
+### 3. Tell Claude about the tool in CLAUDE.md
+
+Add a section to your project's `CLAUDE.md` (or your global `~/.claude/CLAUDE.md`). Here is a ready-to-use snippet:
 
 ```markdown
 ## Outlook Bridge
 
 Script: `C:/Users/YourName/.claude/outlook_bridge.py`
 
-Rules:
-- Always use --draft for reply and forward unless the user explicitly asks to send
+Use this to read and interact with Outlook email and calendar.
+
+**Rules:**
+- Always use `--draft` for reply and forward unless the user explicitly asks to send
 - Never auto-send without user confirmation
-- Use --pretty only for display; omit for chained operations
+- Use `--pretty` only for display; omit for chained operations
+
+**Commands:**
+| What | Command |
+|------|---------|
+| List folders | `python "C:/Users/YourName/.claude/outlook_bridge.py" folders` |
+| List inbox | `python "C:/Users/YourName/.claude/outlook_bridge.py" list --folder inbox --count 20` |
+| Search | `python "C:/Users/YourName/.claude/outlook_bridge.py" search "keyword"` |
+| Read email | `python "C:/Users/YourName/.claude/outlook_bridge.py" read <entry_id>` |
+| Send | `python "C:/Users/YourName/.claude/outlook_bridge.py" send --to addr --subject "..." --body "..."` |
+| Reply (draft) | `python "C:/Users/YourName/.claude/outlook_bridge.py" reply <entry_id> --body "..." --draft` |
+| Reply all (draft) | `python "C:/Users/YourName/.claude/outlook_bridge.py" reply <entry_id> --body "..." --all --draft` |
+| Forward (draft) | `python "C:/Users/YourName/.claude/outlook_bridge.py" forward <entry_id> --to addr --body "..." --draft` |
+| Move email | `python "C:/Users/YourName/.claude/outlook_bridge.py" move <entry_id> --folder "FolderName"` |
+| Delete email | `python "C:/Users/YourName/.claude/outlook_bridge.py" delete <entry_id>` |
+| Calendar | `python "C:/Users/YourName/.claude/outlook_bridge.py" cal-list --from YYYY-MM-DD --to YYYY-MM-DD` |
 ```
 
-### Recommended defaults
-
-Always draft, never auto-send. Pipe entry IDs, not subjects. Use project-level permissions.
-
-### Troubleshooting
-
-- `pywin32 not installed` → `pip install pywin32`
-- `Cannot connect to Outlook` → Outlook must be open and signed in
-- `Folder not found` → run `folders` command to see exact names
-- `Shared calendar not found` → check `outlook_bridge_config.json` key matches `--cal` arg
+Replace `YourName` with your actual Windows username. Quoting the path handles spaces.
 
 ---
 
-## EXAMPLES.md (representative prompts)
+## Recommended defaults
 
-**List unread:** "What's in my inbox? Show me the 10 most recent unread emails."
+**Always draft, never auto-send.** The bridge can send email immediately — which is powerful but unforgiving. The safest pattern is to instruct Claude in CLAUDE.md to always use `--draft` for `reply` and `forward`, and to confirm with you before running `send`. The example snippet above includes this rule.
 
-**Search:** "Search my inbox for emails about 'contract renewal' from the last few weeks."
+**Pipe entry IDs, not subjects.** When chaining commands (e.g. search then reply), always pass the `id` field from the JSON result rather than trying to match by subject. Entry IDs are stable; subjects are not unique.
 
-**Draft reply:** "Reply to the last email from John — tell him we're on track for the deadline. Save as draft."
+**Use project-level permissions.** If you only want Claude to have email access in specific projects, put the `allow` entry in `.claude/settings.json` inside that project folder — not in global settings. You can remove it at any time to revoke access.
 
-**Forward:** "Forward the email about the server outage to ops@mycompany.com with a note saying I need an ETA by EOD. Save as draft."
+---
 
-**Calendar:** "What's on my calendar today?" / "Show me everything on my calendar for the next 7 days."
+## Troubleshooting
 
-**Triage:** "List my 20 most recent emails. Flag which ones need a response and summarise the action required."
+**`pywin32 not installed`** — Run `pip install pywin32` in the Python environment Claude is using.
 
-**Chained workflow:** "Search for emails about the Q3 report. Read the most recent one, then draft a reply acknowledging receipt and saying I'll have comments by Thursday."
+**`Cannot connect to Outlook`** — Outlook Desktop App must be open and signed in before running any command.
+
+**`Folder not found`** — Use the `folders` command to see the exact folder names in your mailbox. Folder names are case-insensitive but must match exactly (spaces included).
+
+**`Shared calendar not found in config`** — Check that `outlook_bridge_config.json` exists in the same directory as the script, and that the key you're passing to `--cal` matches a key in `shared_calendars`.
+
+**`Could not resolve shared calendar`** — The email address in your config must correspond to a calendar you have delegate/read access to in Outlook. Open the calendar in Outlook manually first to confirm access.
+
+---
+
+## EXAMPLES.md
+
+# Example Claude Prompts
+
+These are sample prompts you can use with Claude Code once the bridge is wired up. All assume the bridge path is referenced in your `CLAUDE.md`.
+
+---
+
+## Reading email
+
+**List unread emails**
+> What's in my inbox? Show me the 10 most recent unread emails.
+
+**Search for a thread**
+> Search my inbox for emails about "contract renewal" from the last few weeks.
+
+**Read a specific email**
+> Read that email from Jia Huey — the one about the maintenance schedule.
+
+**Summarise a thread**
+> Search for emails about "invoice" and summarise what's outstanding.
+
+---
+
+## Composing and sending
+
+**Draft a reply**
+> Reply to the last email from John — tell him we're on track for the deadline and I'll send the updated schedule by Friday. Save as draft.
+
+**Reply all**
+> Reply all to that meeting invite — confirm I'll attend. Draft only.
+
+**Forward with context**
+> Forward the email about the server outage to ops@mycompany.com with a note saying I need an ETA by EOD. Save as draft.
+
+**Send a new email**
+> Send an email to alice@example.com, subject "Quick check-in", body "Hi Alice, just checking if you had a chance to review the proposal. Let me know if you need anything from my end."
+
+---
+
+## Filing and managing
+
+**Move an email**
+> Move that email from procurement into the "Contracts/2025" folder.
+
+**Delete**
+> Delete the newsletter email from earlier.
+
+---
+
+## Calendar
+
+**Check today's schedule**
+> What's on my calendar today?
+
+**Check the week ahead**
+> Show me everything on my calendar for the next 7 days.
+
+**Find a free slot**
+> Look at my calendar for this week and tell me when I have at least a 90-minute gap between 9am and 6pm.
+
+**Shared calendar**
+> What's on the shared work calendar for the rest of this month?
+
+---
+
+## Chained workflows
+
+**Research before replying**
+> Search for any emails about the Q3 report. Read the most recent one, then draft a reply acknowledging receipt and saying I'll have comments by Thursday. Save as draft.
+
+**Triage inbox**
+> List my 20 most recent emails. Flag which ones look like they need a response, and summarise what action is needed for each.
+
+**Catch up after leave**
+> I've been out for a week. Search for emails I haven't replied to, group them by sender, and give me a summary of what needs attention.
+
+---
+
+## README.md
+
+# claude-outlook-bridge
+
+**Let Claude Code (and other LLM agents) read and send Outlook email on Windows — no OAuth, no Microsoft Graph, no cloud intermediary.**
+
+A single-file Python bridge that connects Claude Code to your Outlook Desktop App via Windows COM automation. If you're signed into Outlook, Claude has access. Read inboxes, search threads, draft replies, forward with notes, move messages, query calendars — all from inside a Claude Code conversation.
+
+Built for: Claude Code on Windows, Cursor, Aider, or any agent that can shell out to `python`. A practical alternative to building an MCP server when Outlook is already open in front of you.
+
+---
+
+## At a glance
+
+| | |
+|---|---|
+| **Platform** | Windows 10/11 only (uses COM / `pywin32`) |
+| **Python** | 3.9+ |
+| **Auth model** | None — inherits your signed-in Outlook session |
+| **Outlook flavour** | Classic Outlook Desktop App (the Windows thick client). Not New Outlook, OWA, or Mac. |
+| **Commands** | `folders`, `list`, `search`, `read`, `send`, `reply`, `forward`, `move`, `delete`, `cal-list` |
+| **Output** | JSON (add `--pretty` for human formatting) |
+| **Dependencies** | `pywin32` |
+| **License** | MIT |
+| **Agent config** | See [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt) |
+
+---
+
+## Quickstart
+
+```bash
+git clone https://github.com/ChiefStarKid/claude-outlook-bridge.git
+cd claude-outlook-bridge
+pip install -r requirements.txt
+python outlook_bridge.py list --pretty   # smoke test
+```
+
+Then drop this into `.claude/settings.json` in your project to let Claude Code invoke it:
+
+```json
+{ "permissions": { "allow": ["Bash(python *outlook_bridge.py*:*)"] } }
+```
+
+Coding agents should read [AGENTS.md](AGENTS.md) for the full auto-wire snippet. Humans, keep reading.
+
+---
+
+## When to use this vs. alternatives
+
+| Approach | Auth setup | Platform | Best for |
+|---|---|---|---|
+| **claude-outlook-bridge (this repo)** | None — uses signed-in Outlook | Windows + classic Outlook | Local AI assistant on your own machine. Zero config beyond a pip install. |
+| Microsoft Graph API | Azure app registration + OAuth | Any | Server-side automation, cross-platform, headless. |
+| Outlook Add-in (Office JS) | Side-load or Store deploy | Anywhere Outlook runs | Extending the Outlook UI itself, not driving it from outside. |
+| Generic email MCP server | Varies (often IMAP/OAuth) | Any | Multi-mailbox / multi-provider setups, or non-Outlook accounts. |
+
+If Outlook is already open on your Windows box and you just want Claude to use it, this bridge is the shortest path. For anything cross-platform or headless, use Graph.
+
+---
+
+## Why this exists
+
+Most Claude integrations for email require OAuth setup, API credentials, or a cloud intermediary. This bridge takes a different approach: if Outlook is already open on your machine and you're signed in, you already have access — no extra authentication needed.
+
+The bridge started as a simple read-only tool so Claude could look up emails during a conversation without context-switching. Over time it grew to cover the full email lifecycle: composing and sending, reply and reply-all, forwarding with an optional note, moving emails between folders, and querying the calendar. The pattern that emerged — a thin Python script that Claude calls via Bash, returning structured JSON — turned out to be more reliable and simpler to maintain than any webhook or API approach.
+
+If you use Outlook on Windows and work with Claude Code, this lets Claude become a genuine email assistant: reading threads for context, drafting replies, chasing actions, and keeping your calendar in view — all without leaving the conversation.
+
+---
+
+## Prerequisites
+
+- **Windows** (COM automation is Windows-only)
+- **Python 3.9+**
+- **Outlook Desktop App** — the classic Windows thick client, signed in and running. This does _not_ work with the new Outlook web wrapper, OWA, or Mac Outlook.
+- **pywin32**: `pip install pywin32`
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/ChiefStarKid/claude-outlook-bridge.git
+cd claude-outlook-bridge
+pip install -r requirements.txt
+```
+
+Place `outlook_bridge.py` wherever you'd like to call it from — typically `~/.claude/` if you're integrating with Claude Code.
+
+---
+
+## Claude Code permissions
+
+Claude invokes the bridge via a single Bash call: `python /path/to/outlook_bridge.py [command]`. You need to grant Claude Code permission to run that command.
+
+**Scoped (recommended)** — add to `.claude/settings.json` in your project:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(python *outlook_bridge.py*:*)"]
+  }
+}
+```
+
+This allows Claude to run the bridge script only — no other Bash commands are auto-approved.
+
+**Time-bound** — Claude Code doesn't have a native session-expiry permission model. Use project-level settings (`.claude/settings.json` in a specific project folder) rather than global settings. The permission only applies in that project's context; remove or comment out the entry when you no longer want Claude to have email access.
+
+**Broad** — allow all Bash in your Claude Code settings. Not recommended unless you already trust Claude broadly.
+
+> ⚠️ **Auto-send warning**: `send`, `reply`, and `forward` all send immediately by default. Always instruct Claude to use `--draft` unless you explicitly want auto-send. See [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) for recommended CLAUDE.md setup.
+
+---
+
+## Commands
+
+All output is JSON. Add `--pretty` anywhere in the command for human-readable formatting.
+
+### `folders`
+List all mail folders.
+```
+python outlook_bridge.py folders --pretty
+```
+
+### `list`
+List recent emails in a folder.
+```
+python outlook_bridge.py list [--folder INBOX] [--count 20]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--folder` | `inbox` | Folder name (`inbox`, `sent`, `drafts`, `deleted`) or path like `Projects/Client` |
+| `--count` | `20` | Number of emails to return |
+
+### `search`
+Search emails by keyword (subject, body, sender, recipient).
+```
+python outlook_bridge.py search "renewal" [--folder INBOX] [--count 20]
+```
+
+### `read`
+Read a full email including body and attachments. Requires an `EntryID` from `list` or `search`.
+```
+python outlook_bridge.py read <entry_id>
+```
+
+### `send`
+Send a new email. **Sends immediately.**
+```
+python outlook_bridge.py send --to user@example.com --subject "Hello" --body "Message here"
+python outlook_bridge.py send --to a@x.com b@x.com --cc c@x.com --subject "Hi" --body "..." --html
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--to` | Yes | One or more recipient addresses |
+| `--subject` | Yes | Email subject |
+| `--body` | Yes | Email body (plain text, or HTML if `--html`) |
+| `--cc` | No | One or more CC addresses |
+| `--html` | No | Treat `--body` as HTML |
+
+### `reply`
+Reply to an email. Use `--draft` to save to Drafts instead of sending.
+```
+python outlook_bridge.py reply <entry_id> --body "Thanks, noted." --draft
+python outlook_bridge.py reply <entry_id> --body "Agreed." --all
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--body` | Yes | Reply text (prepended inline above quoted thread) |
+| `--draft` | No | Save to Drafts instead of sending |
+| `--all` | No | Reply all |
+| `--html` | No | Treat `--body` as HTML |
+| `--attach-email` | No | Entry IDs of emails to attach as `.msg` files |
+
+### `forward`
+Forward an email. Use `--draft` to save to Drafts instead of sending.
+```
+python outlook_bridge.py forward <entry_id> --to user@example.com --body "FYI" --draft
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--to` | Yes | One or more recipient addresses |
+| `--body` | No | Optional note prepended above the forwarded content |
+| `--draft` | No | Save to Drafts instead of sending |
+| `--cc` | No | One or more CC addresses |
+
+### `move`
+Move an email to a folder.
+```
+python outlook_bridge.py move <entry_id> --folder "Archive"
+python outlook_bridge.py move <entry_id> --folder "Projects/Client"
+```
+
+### `delete`
+Move an email to Deleted Items.
+```
+python outlook_bridge.py delete <entry_id>
+```
+
+### `cal-list`
+List calendar events in a date range.
+```
+python outlook_bridge.py cal-list --from 2025-01-01 --to 2025-01-31
+python outlook_bridge.py cal-list --from 2025-01-01 --to 2025-01-31 --cal work
+```
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--from` | Yes | Start date `YYYY-MM-DD` |
+| `--to` | Yes | End date `YYYY-MM-DD` |
+| `--cal` | No | `personal` (default) or a shared calendar name from your config |
+
+---
+
+## Shared calendar config
+
+To query a shared calendar, create `outlook_bridge_config.json` in the same directory as the script (or at `~/.claude/outlook_bridge_config.json`):
+
+```json
+{
+  "shared_calendars": {
+    "work": "shared-calendar@yourorg.com"
+  }
+}
+```
+
+The key (`work`) becomes the value you pass to `--cal`. You can define as many shared calendars as you have access to in Outlook. If no config file exists, only `--cal personal` is available.
+
+---
+
+## Output format
+
+All commands return a JSON object. On error, the script exits with code 1 and prints `{"error": "..."}`.
+
+Use `--pretty` for human-readable output:
+```
+python outlook_bridge.py list --pretty
+```
 
 ---
 
 ## FAQ
 
-**Does this work with the new Outlook for Windows?** No — the new Outlook is a web wrapper without a COM surface. Requires classic Outlook Desktop App.
+### Does this work with the new Outlook for Windows?
+No. The new Outlook is a web wrapper without the COM surface. You need the classic Outlook Desktop App (the one bundled with Microsoft 365 / Office 2019+).
 
-**Does this work on macOS or Linux?** No. COM is Windows-only. Use Microsoft Graph API for cross-platform.
+### Does this work on macOS or Linux?
+No. COM is Windows-only. On macOS or for headless setups, use the Microsoft Graph API instead.
 
-**Why not just use an MCP server?** This bridge is deliberately simpler: one Python file, no daemon, no protocol overhead. Claude shells out, Outlook responds, JSON comes back. For a single-user Windows workflow it's much less to set up.
+### Why not just use an MCP server?
+MCP is great when you need a long-running server process and cross-client compatibility. This bridge is deliberately the opposite: one Python file, no daemon, no protocol overhead. Claude shells out, Outlook responds, JSON comes back. For a single-user Windows workflow it's much less to set up and less to break.
 
-**Why not Microsoft Graph?** Graph requires Azure app registration, OAuth consent, and token refresh. This bridge requires none of that — it rides your existing Outlook session. Trade-off: Windows + Outlook open only.
+### Why not Microsoft Graph?
+Graph requires an Azure app registration, OAuth consent flow, and token refresh. This bridge requires none of that — it rides your existing Outlook session. Trade-off: it only works while you're at your Windows machine with Outlook open.
 
-**Is auto-send safe?** send, reply, and forward send immediately by default. Always have Claude use `--draft` unless you explicitly want an outgoing message.
+### Is auto-send safe?
+`send`, `reply`, and `forward` send immediately by default. **Always have Claude use `--draft`** unless you explicitly want an outgoing message. The recommended CLAUDE.md snippet in [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) bakes this in.
 
-**Does Outlook need to be open?** Yes — the script attaches to the running Outlook process.
+### Does Outlook need to be open?
+Yes. The script attaches to the running Outlook process. If Outlook isn't open, the COM dispatch will fail.
 
-**Does it use AI / send email to Anthropic?** No. The bridge is pure Python ↔ COM. It only returns email content to the invoking process.
+### Can it read shared mailboxes?
+Any mailbox or folder visible in your Outlook profile is reachable via the `--folder` argument using a path like `Shared Mailbox/Inbox`. Shared calendars need a one-line entry in `outlook_bridge_config.json`.
+
+### Does it use AI / send my email to Anthropic?
+No. The bridge itself is pure Python ↔ COM. It only returns email content to whatever process invokes it (typically Claude Code, which then handles it per your normal CC privacy settings).
+
+---
+
+## Design notes
+
+**COM automation vs Outlook Add-ins**
+
+The Outlook Desktop App exposes two ways to build on top of it. *Add-ins* use the Office JS API — they run inside Outlook as a web-based extension and work across desktop, web, and Mac. *COM automation* (what this bridge uses) is a lower-level Windows interface that lets external programs talk directly to the Outlook process. COM gives broader access — full folder trees, arbitrary mail operations, shared calendars, the ability to send without a UI — but only works on Windows with the thick client running.
+
+This bridge chose COM because the goal is automation from _outside_ Outlook, not extending the Outlook UI. An Add-in lives inside Outlook; this bridge lets Claude (an external agent) drive Outlook as a tool.
+
+**How Python calls COM**
+
+The bridge uses `pywin32`, a Python library that wraps the Windows COM interface. `win32com.client.Dispatch("Outlook.Application")` connects directly to the running Outlook process — in-process, no network, no API call. Everything from there is Python method calls on COM objects. Bash is only involved once: Claude executing `python outlook_bridge.py [command]`. Once Python is running, everything else is pure Python ↔ COM ↔ Outlook.
+
+**Why not Microsoft Graph API?**
+
+Graph works cross-platform and doesn't require Outlook to be open. The trade-off: it requires an Azure app registration, OAuth consent flow, and ongoing token management. COM requires nothing beyond Outlook being signed in. For a local AI assistant workflow where you're already at your Windows machine, COM is the simpler, faster path.
+
+**Reply and forward — inline drafts**
+
+Replies and forwards are constructed the way Outlook constructs them natively: the new content is prepended above the quoted thread HTML, so the draft appears inline in Outlook exactly as a user would compose it. The thread is preserved, formatting is intact, and you can review the full context before deciding whether to send.
+
+**Why JSON output?**
+
+Claude processes structured data better than prose. Every command returns a JSON object with consistent field names so Claude can reason about email content, extract IDs, chain operations (read → reply, search → forward), and summarise threads — without screen-scraping or parsing unstructured text.
+
+---
+
+## Limitations
+
+- Windows only (requires COM / pywin32)
+- Requires the Outlook Desktop App (the Windows thick client) — not compatible with the new Outlook web wrapper, OWA, or Mac Outlook
+- Outlook must be open and signed in when the script runs
+- Tested against classic Outlook (Microsoft 365 subscription); behaviour may vary on older perpetual-license versions
+
+---
+
+## Sample output
+
+`python outlook_bridge.py list --count 2 --pretty`
+
+```json
+[
+  {
+    "EntryID": "00000000ABC123...",
+    "Subject": "Q2 renewal — action required",
+    "SenderName": "Alice Tan",
+    "SenderEmail": "alice@client.com",
+    "ReceivedTime": "2026-06-12T09:14:00",
+    "Unread": true,
+    "HasAttachments": false,
+    "BodyPreview": "Hi, following up on the renewal terms we discussed last week..."
+  },
+  {
+    "EntryID": "00000000DEF456...",
+    "Subject": "Re: staging deployment",
+    "SenderName": "Bob Lee",
+    "SenderEmail": "bob@internal.com",
+    "ReceivedTime": "2026-06-11T17:42:00",
+    "Unread": false,
+    "HasAttachments": true,
+    "BodyPreview": "Attached the updated config. Let me know if the env vars look right..."
+  }
+]
+```
+
+Pass any `EntryID` to `read` for the full message body, headers, and attachment list.
+
+---
+
+## Related docs
+
+- [CLAUDE_INTEGRATION.md](CLAUDE_INTEGRATION.md) — recommended CLAUDE.md snippet, permission scoping, draft-by-default rules
+- [EXAMPLES.md](EXAMPLES.md) — worked Claude prompts for common email workflows
+- [AGENTS.md](AGENTS.md) — machine-readable manifest for coding agents (Claude Code, Cursor, Aider)
+- [llms.txt](llms.txt) — [llmstxt.org](https://llmstxt.org) index for LLM ingestion
+
+---
+
+## Questions and feedback
+
+- **General enquiries:** [joseph@kainosis.com](mailto:joseph@kainosis.com)
+- **Bugs and feature requests:** [open an issue](../../issues)
+
