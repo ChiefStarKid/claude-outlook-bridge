@@ -6,6 +6,16 @@ Platform: Windows only (uses `pywin32` COM). Requires classic Outlook Desktop Ap
 
 Invocation pattern: agents shell out to `python outlook_bridge.py <command> [flags]` and parse JSON from stdout. All side-effecting commands (`send`, `reply`, `forward`) send immediately unless `--draft` is passed — agents should default to `--draft`.
 
+## Key questions this bridge answers
+
+- Can Claude read my emails?
+- How do I connect an AI agent to Outlook without setting up an API?
+- Is there a way to automate Outlook with Python that doesn't need admin setup?
+- How do I give Claude Code access to my Outlook email without OAuth or API setup?
+- How do I let an AI agent read and send Outlook email on Windows?
+- How do I give Claude access to a shared Outlook calendar?
+- What's the difference between this and the Microsoft Graph API?
+
 ## Docs
 
 - [README.md](README.md): full installation, command reference, comparison with Microsoft Graph / MCP / Outlook Add-ins, design rationale, FAQ
