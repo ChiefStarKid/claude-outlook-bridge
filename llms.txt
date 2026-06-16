@@ -44,6 +44,6 @@ Invocation pattern: agents shell out to `python outlook_bridge.py <command> [fla
 
 ## Author
 
-Joseph Solomon · joseph@kainosis.com · https://www.linkedin.com/in/joseph-solomon-%E6%88%B4%E4%BC%81%E5%BA%86-376156160/
+Joseph Solomon · joseph@kainosis.com · https://www.linkedin.com/in/joseph-solomon-376156160/
 
 More tools: https://github.com/ChiefStarKid
